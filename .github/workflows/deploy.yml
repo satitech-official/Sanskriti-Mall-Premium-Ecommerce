@@ -33,33 +33,50 @@ jobs:
       - name: Prepare GitHub Pages-safe routes
         shell: bash
         run: |
-          # Browser-local dynamic ids/sections are represented by static query routes
-          # only inside the CI workspace. Original source routes remain in the repo.
           rm -rf 'app/order/[id]' 'app/product/[slug]' 'app/admin/[section]'
 
           python - <<'PY'
           from pathlib import Path
+          import re
 
-          for path in Path('components').rglob('*.tsx'):
+          prefix = '/Sanskriti-Mall-Premium-Ecommerce'
+
+          for path in list(Path('components').rglob('*.tsx')) + list(Path('app').rglob('*.tsx')):
               text = path.read_text()
+
+              # Convert browser-local dynamic routes to query routes for static hosting.
               text = text.replace('/product/${product.slug}', '/product?slug=${product.slug}')
               text = text.replace('/product/${related.slug}', '/product?slug=${related.slug}')
               text = text.replace('/order/${order.id}', '/order?id=${order.id}')
+
+              # Prefix literal local links used by Next Link/anchors.
+              text = re.sub(r'href="/(?!/)', f'href="{prefix}/', text)
+              text = re.sub(r"href='/(?!/)", f"href='{prefix}/", text)
+
+              # Prefix template-literal local links.
+              text = text.replace('href={`/product?', f'href={{`{prefix}/product?')
+              text = text.replace('href={`/order?', f'href={{`{prefix}/order?')
+              text = text.replace('href={`/admin?', f'href={{`{prefix}/admin?')
+
+              # Prefix programmatic navigation.
+              text = text.replace('router.push(`/order?', f'router.push(`{prefix}/order?')
+              text = text.replace('router.push("/', f'router.push("{prefix}/')
+              text = text.replace("router.push('/", f"router.push('{prefix}/")
+
               path.write_text(text)
 
           admin = Path('components/AdminPanel.tsx')
           text = admin.read_text()
-          text = text.replace('href={`/admin/${value}`}', 'href={`/admin?section=${value}`}')
-          text = text.replace('href="/admin/dashboard"', 'href="/admin?section=dashboard"')
-          text = text.replace('href="/admin/products"', 'href="/admin?section=products"')
-          text = text.replace('window.location.assign("/admin/dashboard")', 'window.location.assign("/Sanskriti-Mall-Premium-Ecommerce/admin/?section=dashboard")')
-          text = text.replace('window.location.assign("/admin/login")', 'window.location.assign("/Sanskriti-Mall-Premium-Ecommerce/admin/login/")')
+          text = text.replace('href={`/admin/${value}`}', f'href={{`{prefix}/admin?section=${{value}}`}}')
+          text = text.replace('window.location.assign("/admin/dashboard")', f'window.location.assign("{prefix}/admin/?section=dashboard")')
+          text = text.replace('window.location.assign("/admin/login")', f'window.location.assign("{prefix}/admin/login/")')
           admin.write_text(text)
           PY
 
       - name: Build static ecommerce website
         env:
           GITHUB_PAGES: "true"
+          NEXT_PUBLIC_SITE_URL: "https://satitech-official.github.io/Sanskriti-Mall-Premium-Ecommerce/"
         run: npm run build
 
       - name: Fix direct public asset paths
@@ -87,6 +104,10 @@ jobs:
                   for old, new in replacements.items():
                       text = text.replace(old, new)
                   path.write_text(text)
+
+          if not (root / 'index.html').exists():
+              raise SystemExit('GitHub Pages build is invalid: dist/client/index.html is missing')
+
           (root / '.nojekyll').touch()
           PY
 
