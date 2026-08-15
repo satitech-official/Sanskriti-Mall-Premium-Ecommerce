@@ -33,23 +33,27 @@ jobs:
       - name: Prepare GitHub Pages-safe routes
         shell: bash
         run: |
-          # Dynamic order ids are browser-local demo data, so use one static
-          # query-based order route on GitHub Pages. This only changes the CI workspace.
-          rm -rf 'app/order/[id]'
+          # Browser-local dynamic ids/sections are represented by static query routes
+          # only inside the CI workspace. Original source routes remain in the repo.
+          rm -rf 'app/order/[id]' 'app/product/[slug]' 'app/admin/[section]'
+
           python - <<'PY'
           from pathlib import Path
 
-          customer = Path('components/CustomerPages.tsx')
-          text = customer.read_text()
-          text = text.replace('router.push(`/order/${order.id}`)', 'router.push(`/order?id=${order.id}`)')
-          text = text.replace('href={`/order/${order.id}`}', 'href={`/order?id=${order.id}`}')
-          customer.write_text(text)
+          for path in Path('components').rglob('*.tsx'):
+              text = path.read_text()
+              text = text.replace('/product/${product.slug}', '/product?slug=${product.slug}')
+              text = text.replace('/product/${related.slug}', '/product?slug=${related.slug}')
+              text = text.replace('/order/${order.id}', '/order?id=${order.id}')
+              path.write_text(text)
 
           admin = Path('components/AdminPanel.tsx')
           text = admin.read_text()
-          prefix = '/Sanskriti-Mall-Premium-Ecommerce'
-          text = text.replace('window.location.assign("/admin/dashboard")', f'window.location.assign("{prefix}/admin/dashboard/")')
-          text = text.replace('window.location.assign("/admin/login")', f'window.location.assign("{prefix}/admin/login/")')
+          text = text.replace('href={`/admin/${value}`}', 'href={`/admin?section=${value}`}')
+          text = text.replace('href="/admin/dashboard"', 'href="/admin?section=dashboard"')
+          text = text.replace('href="/admin/products"', 'href="/admin?section=products"')
+          text = text.replace('window.location.assign("/admin/dashboard")', 'window.location.assign("/Sanskriti-Mall-Premium-Ecommerce/admin/?section=dashboard")')
+          text = text.replace('window.location.assign("/admin/login")', 'window.location.assign("/Sanskriti-Mall-Premium-Ecommerce/admin/login/")')
           admin.write_text(text)
           PY
 
