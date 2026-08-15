@@ -44,21 +44,16 @@ jobs:
           for path in list(Path('components').rglob('*.tsx')) + list(Path('app').rglob('*.tsx')):
               text = path.read_text()
 
-              # Convert browser-local dynamic routes to query routes for static hosting.
               text = text.replace('/product/${product.slug}', '/product?slug=${product.slug}')
               text = text.replace('/product/${related.slug}', '/product?slug=${related.slug}')
               text = text.replace('/order/${order.id}', '/order?id=${order.id}')
 
-              # Prefix literal local links used by Next Link/anchors.
               text = re.sub(r'href="/(?!/)', f'href="{prefix}/', text)
               text = re.sub(r"href='/(?!/)", f"href='{prefix}/", text)
 
-              # Prefix template-literal local links.
               text = text.replace('href={`/product?', f'href={{`{prefix}/product?')
               text = text.replace('href={`/order?', f'href={{`{prefix}/order?')
-              text = text.replace('href={`/admin?', f'href={{`{prefix}/admin?')
 
-              # Prefix programmatic navigation.
               text = text.replace('router.push(`/order?', f'router.push(`{prefix}/order?')
               text = text.replace('router.push("/', f'router.push("{prefix}/')
               text = text.replace("router.push('/", f"router.push('{prefix}/")
@@ -67,7 +62,9 @@ jobs:
 
           admin = Path('components/AdminPanel.tsx')
           text = admin.read_text()
-          text = text.replace('href={`/admin/${value}`}', f'href={{`{prefix}/admin?section=${{value}}`}}')
+          old = 'href={`/admin/${value}`}'
+          new = 'href={`' + prefix + '/admin?section=${value}`}'
+          text = text.replace(old, new)
           text = text.replace('window.location.assign("/admin/dashboard")', f'window.location.assign("{prefix}/admin/?section=dashboard")')
           text = text.replace('window.location.assign("/admin/login")', f'window.location.assign("{prefix}/admin/login/")')
           admin.write_text(text)
@@ -79,7 +76,7 @@ jobs:
           NEXT_PUBLIC_SITE_URL: "https://satitech-official.github.io/Sanskriti-Mall-Premium-Ecommerce/"
         run: npm run build
 
-      - name: Fix direct public asset paths
+      - name: Validate and fix Pages assets
         shell: bash
         run: |
           python - <<'PY'
@@ -95,6 +92,7 @@ jobs:
               '"/favicon.svg"': f'"{prefix}/favicon.svg"',
               "'/favicon.svg'": f"'{prefix}/favicon.svg'",
           }
+
           for path in root.rglob('*'):
               if path.is_file() and path.suffix in {'.html', '.js', '.css', '.json'}:
                   try:
@@ -106,7 +104,7 @@ jobs:
                   path.write_text(text)
 
           if not (root / 'index.html').exists():
-              raise SystemExit('GitHub Pages build is invalid: dist/client/index.html is missing')
+              raise SystemExit('GitHub Pages build invalid: index.html missing')
 
           (root / '.nojekyll').touch()
           PY
