@@ -81,9 +81,21 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import shutil
 
           root = Path('dist/client')
           prefix = '/Sanskriti-Mall-Premium-Ecommerce'
+          nested_next = root / 'Sanskriti-Mall-Premium-Ecommerce' / '_next'
+          root_next = root / '_next'
+
+          # vinext + assetPrefix emits _next inside a nested repo folder.
+          # GitHub project pages resolve /repo/_next/... to artifact-root/_next/...
+          # so mirror those generated assets to the artifact root.
+          if nested_next.exists():
+              if root_next.exists():
+                  shutil.rmtree(root_next)
+              shutil.copytree(nested_next, root_next)
+
           replacements = {
               '"/images/': f'"{prefix}/images/',
               "'/images/": f"'{prefix}/images/",
@@ -105,6 +117,13 @@ jobs:
 
           if not (root / 'index.html').exists():
               raise SystemExit('GitHub Pages build invalid: index.html missing')
+
+          css_files = list((root / '_next' / 'static' / 'css').glob('*.css'))
+          js_files = list((root / '_next' / 'static' / 'chunks').glob('*.js'))
+          if not css_files:
+              raise SystemExit('GitHub Pages build invalid: root _next CSS missing')
+          if not js_files:
+              raise SystemExit('GitHub Pages build invalid: root _next JS chunks missing')
 
           (root / '.nojekyll').touch()
           PY
