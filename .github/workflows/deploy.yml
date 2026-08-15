@@ -1,0 +1,108 @@
+name: Deploy Sanskriti Mall to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare GitHub Pages-safe routes
+        shell: bash
+        run: |
+          # Dynamic order ids are browser-local demo data, so use one static
+          # query-based order route on GitHub Pages. This only changes the CI workspace.
+          rm -rf 'app/order/[id]'
+          python - <<'PY'
+          from pathlib import Path
+
+          customer = Path('components/CustomerPages.tsx')
+          text = customer.read_text()
+          text = text.replace('router.push(`/order/${order.id}`)', 'router.push(`/order?id=${order.id}`)')
+          text = text.replace('href={`/order/${order.id}`}', 'href={`/order?id=${order.id}`}')
+          customer.write_text(text)
+
+          admin = Path('components/AdminPanel.tsx')
+          text = admin.read_text()
+          prefix = '/Sanskriti-Mall-Premium-Ecommerce'
+          text = text.replace('window.location.assign("/admin/dashboard")', f'window.location.assign("{prefix}/admin/dashboard/")')
+          text = text.replace('window.location.assign("/admin/login")', f'window.location.assign("{prefix}/admin/login/")')
+          admin.write_text(text)
+          PY
+
+      - name: Build static ecommerce website
+        env:
+          GITHUB_PAGES: "true"
+        run: npm run build
+
+      - name: Fix direct public asset paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('dist/client')
+          prefix = '/Sanskriti-Mall-Premium-Ecommerce'
+          replacements = {
+              '"/images/': f'"{prefix}/images/',
+              "'/images/": f"'{prefix}/images/",
+              '"/og.png"': f'"{prefix}/og.png"',
+              "'/og.png'": f"'{prefix}/og.png'",
+              '"/favicon.svg"': f'"{prefix}/favicon.svg"',
+              "'/favicon.svg'": f"'{prefix}/favicon.svg'",
+          }
+          for path in root.rglob('*'):
+              if path.is_file() and path.suffix in {'.html', '.js', '.css', '.json'}:
+                  try:
+                      text = path.read_text()
+                  except UnicodeDecodeError:
+                      continue
+                  for old, new in replacements.items():
+                      text = text.replace(old, new)
+                  path.write_text(text)
+          (root / '.nojekyll').touch()
+          PY
+
+      - name: Configure and enable GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./dist/client
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
